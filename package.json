@@ -1,0 +1,23 @@
+{
+  "name": "triplanner-gpt51",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

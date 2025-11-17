@@ -1,0 +1,19 @@
+{
+  "name": "@triplanner/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "echo \"App dev server TBD\"",
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"No lint configured for @triplanner/app\"",
+    "test": "echo \"No tests yet for @triplanner/app\""
+  },
+  "dependencies": {
+    "@triplanner/core": "workspace:*",
+    "@triplanner/renderer-canvas": "workspace:*"
+  },
+  "license": "MIT"
+}
+
