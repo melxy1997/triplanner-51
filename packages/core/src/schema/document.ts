@@ -1,6 +1,6 @@
-import { BlockId, TripBlock } from './block';
-import { Connector, ConnectorId } from './connector';
-import { TimelineId, TimelineItem } from './timeline';
+import { BlockId, TripBlock } from './block.js';
+import { Connector, ConnectorId } from './connector.js';
+import { TimelineId, TimelineItem } from './timeline.js';
 
 /**
  * Triplanner 的单份协作文档，包含白板、连线以及 Timeline 数据。

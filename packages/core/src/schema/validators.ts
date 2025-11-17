@@ -5,9 +5,9 @@ import {
   NoteBlock,
   TransportBlock,
   TripBlock,
-} from './block';
-import { Connector } from './connector';
-import { TripDocument } from './document';
+} from './block.js';
+import { Connector } from './connector.js';
+import { TripDocument } from './document.js';
 
 /**
  * 判断字符串是否是有效 ISO 时间。

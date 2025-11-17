@@ -12,10 +12,6 @@
     "declaration": true,
     "sourceMap": true,
     "baseUrl": ".",
-    "paths": {
-      "@triplanner/core": ["packages/core/src"],
-      "@triplanner/renderer-canvas": ["packages/renderer-canvas/src"]
-    },
     "types": ["node"]
   }
 }

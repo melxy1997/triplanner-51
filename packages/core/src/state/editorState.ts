@@ -1,7 +1,7 @@
-import { TripDocument } from '../schema/document';
-import { Selection } from '../schema/selection';
-import { Viewport } from '../schema/viewport';
-import { HistoryState, createEmptyHistoryState } from '../history/history';
+import { TripDocument } from '../schema/document.js';
+import { Selection } from '../schema/selection.js';
+import { Viewport } from '../schema/viewport.js';
+import { HistoryState, createEmptyHistoryState } from '../history/history.js';
 
 /**
  * EditorState 描述了当前白板的完整状态

@@ -1,5 +1,5 @@
-import { BlockId } from './block';
-import { ConnectorId } from './connector';
+import { BlockId } from './block.js';
+import { ConnectorId } from './connector.js';
 
 /**
  * 当前编辑器的选中状态。

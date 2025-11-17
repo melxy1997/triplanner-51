@@ -1,4 +1,4 @@
-import { Size, TimeRange, Vec2 } from './types';
+import { Size, TimeRange, Vec2 } from './types.js';
 
 /**
  * 节点类型枚举，描述白板中出现的业务实体。

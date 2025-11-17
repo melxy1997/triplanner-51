@@ -1,4 +1,4 @@
-import { Transaction } from '../transaction/transaction';
+import { Transaction } from '../transaction/transaction.js';
 
 /**
  * 一条历史记录，包含正向 Transaction 与逆操作。
