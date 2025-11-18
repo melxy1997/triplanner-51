@@ -2,12 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   EditorState,
   createEmptyEditorState,
-  addBlock,
   setViewport,
   setSelection,
-  createFlightBlock,
+  addFlightWithTimeline,
+  updateBlockLayout,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
 } from '@triplanner/core';
-import { WhiteboardRenderer } from '@triplanner/renderer-canvas';
+import { WhiteboardRenderer, screenToWorld } from '@triplanner/renderer-canvas';
+import { TimelinePanel } from './TimelinePanel.js';
+import { BlockId } from '@triplanner/core';
 
 /**
  * 白板组件 Props。
@@ -42,6 +48,12 @@ export function Whiteboard({
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WhiteboardRenderer | null>(null);
+  const dragStateRef = useRef<{
+    blockId: BlockId;
+    startWorld: { x: number; y: number };
+    initialPosition: { x: number; y: number };
+  } | null>(null);
+  const dragLastPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [state, setState] = useState<EditorState>(
     initialState ?? createEmptyEditorState(),
   );
@@ -56,6 +68,7 @@ export function Whiteboard({
       overlayCanvas: overlayCanvasRef.current ?? undefined,
     });
 
+    renderer.resize(width, height, window.devicePixelRatio || 1);
     rendererRef.current = renderer;
     renderer.updateState(state);
     renderer.render();
@@ -64,6 +77,7 @@ export function Whiteboard({
       renderer.destroy();
       rendererRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 状态变化时更新渲染器
@@ -75,123 +89,206 @@ export function Whiteboard({
     }
   }, [state, onStateChange]);
 
-  // 处理画布点击
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!rendererRef.current || !mainCanvasRef.current) return;
+  const canvasSize = { width, height };
 
+  const handleSelectionChange = (blockIds: BlockId[]) => {
+    setState((prev) =>
+      setSelection(prev, {
+        selectedBlockIds: blockIds,
+        selectedConnectorIds: [],
+      }),
+    );
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!rendererRef.current || !mainCanvasRef.current) return;
     const rect = mainCanvasRef.current.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-
     const blockId = rendererRef.current.hitTestBlockAt(screenX, screenY);
+
     if (blockId) {
-      setState((prev) =>
-        setSelection(prev, {
-          selectedBlockIds: [blockId],
-          selectedConnectorIds: [],
-        }),
+      handleSelectionChange([blockId]);
+      const block = state.doc.blocks.get(blockId);
+      if (!block) return;
+      const worldPoint = screenToWorld(
+        { x: screenX, y: screenY },
+        state.viewport,
+        canvasSize,
       );
+      dragStateRef.current = {
+        blockId,
+        startWorld: worldPoint,
+        initialPosition: { ...block.layout.position },
+      };
+      dragLastPositionRef.current = block.layout.position;
     } else {
+      handleSelectionChange([]);
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!dragStateRef.current || !mainCanvasRef.current) return;
+    const rect = mainCanvasRef.current.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const worldPoint = screenToWorld(
+      { x: screenX, y: screenY },
+      state.viewport,
+      canvasSize,
+    );
+
+    const { blockId, startWorld, initialPosition } = dragStateRef.current;
+    const deltaX = worldPoint.x - startWorld.x;
+    const deltaY = worldPoint.y - startWorld.y;
+    const newPos = {
+      x: initialPosition.x + deltaX,
+      y: initialPosition.y + deltaY,
+    };
+    dragLastPositionRef.current = newPos;
+    setState((prev) =>
+      updateBlockLayout(
+        prev,
+        blockId,
+        { position: newPos },
+        { addToHistory: false, label: 'drag-preview' },
+      ),
+    );
+  };
+
+  const endDrag = () => {
+    if (dragStateRef.current && dragLastPositionRef.current) {
+      const { blockId } = dragStateRef.current;
+      const finalPos = dragLastPositionRef.current;
       setState((prev) =>
-        setSelection(prev, {
-          selectedBlockIds: [],
-          selectedConnectorIds: [],
+        updateBlockLayout(prev, blockId, { position: finalPos }, { groupId: 'drag' }),
+      );
+    }
+    dragStateRef.current = null;
+    dragLastPositionRef.current = null;
+  };
+
+  const handleAddFlight = () => {
+    const now = new Date();
+    const endTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    setState((prev) =>
+      addFlightWithTimeline(prev, {
+        title: '示例航班',
+        fromAirport: 'PEK',
+        toAirport: 'SHA',
+        flightNumber: `CA${Math.floor(Math.random() * 9000 + 1000)}`,
+        time: {
+          start: now.toISOString(),
+          end: endTime.toISOString(),
+        },
+        position: { x: Math.random() * 400 + 50, y: Math.random() * 300 + 50 },
+      }),
+    );
+  };
+
+  const handleUndo = () => {
+    if (canUndo(state)) {
+      setState((prev) => undo(prev));
+    }
+  };
+
+  const handleRedo = () => {
+    if (canRedo(state)) {
+      setState((prev) => redo(prev));
+    }
+  };
+
+  const handleTimelineSelect = (item: { blockId: BlockId }) => {
+    handleSelectionChange([item.blockId]);
+    const block = state.doc.blocks.get(item.blockId);
+    if (block) {
+      setState((prev) =>
+        setViewport(prev, {
+          center: {
+            x: block.layout.position.x + block.layout.size.width / 2,
+            y: block.layout.position.y + block.layout.size.height / 2,
+          },
         }),
       );
     }
   };
 
-  // 处理添加节点按钮
-  const handleAddFlight = () => {
-    const now = new Date();
-    const endTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2小时后
-    const flight = createFlightBlock({
-      title: '示例航班',
-      fromAirport: 'PEK',
-      toAirport: 'SHA',
-      flightNumber: 'CA1234',
-      time: {
-        start: now.toISOString(),
-        end: endTime.toISOString(),
-      },
-      position: { x: Math.random() * 500, y: Math.random() * 400 },
-    });
-
-    setState((prev) => addBlock(prev, flight));
-  };
-
   return (
-    <div style={{ position: 'relative', width, height }}>
-      {/* 背景画布 */}
-      <canvas
-        ref={backgroundCanvasRef}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          zIndex: 0,
-        }}
-        width={width}
-        height={height}
-      />
+    <div style={{ display: 'flex', gap: '16px', width: width + 320, height }}>
+      <div style={{ position: 'relative', width, height }}>
+        <canvas
+          ref={backgroundCanvasRef}
+          style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}
+          width={width}
+          height={height}
+        />
+        <canvas
+          ref={mainCanvasRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={endDrag}
+          onMouseLeave={endDrag}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 1,
+            cursor: dragStateRef.current ? 'grabbing' : 'pointer',
+          }}
+          width={width}
+          height={height}
+        />
+        <canvas
+          ref={overlayCanvasRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 2,
+            pointerEvents: 'none',
+          }}
+          width={width}
+          height={height}
+        />
 
-      {/* 主画布 */}
-      <canvas
-        ref={mainCanvasRef}
-        onClick={handleCanvasClick}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          zIndex: 1,
-          cursor: 'pointer',
-        }}
-        width={width}
-        height={height}
-      />
-
-      {/* 覆盖层画布 */}
-      <canvas
-        ref={overlayCanvasRef}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          zIndex: 2,
-          pointerEvents: 'none',
-        }}
-        width={width}
-        height={height}
-      />
-
-      {/* 工具栏 */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 10,
-          left: 10,
-          zIndex: 10,
-          background: 'white',
-          padding: '10px',
-          borderRadius: '4px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        }}
-      >
-        <button onClick={handleAddFlight} style={{ marginRight: '8px' }}>
-          添加航班
-        </button>
-        <button
-          onClick={() => {
-            setState((prev) =>
-              setViewport(prev, {
-                center: { x: Math.random() * 500, y: Math.random() * 400 },
-                zoom: 1,
-              }),
-            );
+        <div
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: 10,
+            zIndex: 10,
+            background: 'white',
+            padding: '10px',
+            borderRadius: '4px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            display: 'flex',
+            gap: '8px',
           }}
         >
-          随机视口
-        </button>
+          <button onClick={handleAddFlight}>添加航班+时间线</button>
+          <button onClick={handleUndo} disabled={!canUndo(state)}>
+            撤销
+          </button>
+          <button onClick={handleRedo} disabled={!canRedo(state)}>
+            重做
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          flex: '0 0 280px',
+          borderLeft: '1px solid #eee',
+          height,
+          background: '#fafafa',
+        }}
+      >
+        <TimelinePanel
+          timeline={state.doc.timeline}
+          blocks={state.doc.blocks}
+          selectedBlockIds={state.selection.selectedBlockIds}
+          onSelectTimelineItem={handleTimelineSelect}
+        />
       </div>
     </div>
   );

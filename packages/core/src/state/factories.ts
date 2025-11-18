@@ -59,7 +59,7 @@ export interface CreateFlightBlockInput {
 /**
  * 根据输入创建一个合法的航班节点。
  */
-export const createFlightBlock = (input: CreateFlightBlockInput): TripBlock =>
+export const createFlightBlock = (input: CreateFlightBlockInput): FlightBlock =>
   withMeta<FlightBlock>({
     id: generateId('block'),
     kind: 'flight',

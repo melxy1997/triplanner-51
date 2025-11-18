@@ -7,5 +7,6 @@
 
 export * from './blockCommands.js';
 export * from './viewCommands.js';
+export * from './timelineCommands.js';
 export * from './historyCommands.js';
 

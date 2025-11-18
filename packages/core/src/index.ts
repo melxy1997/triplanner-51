@@ -30,6 +30,7 @@ export * from './state/factories.js';
 export * from './steps/types.js';
 export * from './steps/blockSteps.js';
 export * from './steps/viewSteps.js';
+export * from './steps/timelineSteps.js';
 
 // Transaction 导出
 export * from './transaction/transaction.js';
