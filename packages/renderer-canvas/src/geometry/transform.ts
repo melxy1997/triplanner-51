@@ -1,4 +1,5 @@
 import { Viewport } from '@triplanner/core';
+import { Rect } from './bounds.js';
 
 /**
  * Canvas 尺寸信息。
@@ -57,5 +58,21 @@ export function screenToWorld(
  */
 export function worldSizeToScreen(size: number, zoom: number): number {
   return size * zoom;
+}
+
+/**
+ * 将世界坐标下的矩形转换到屏幕坐标。
+ * @param rect 世界坐标矩形
+ * @param viewport 当前视口
+ * @param canvas 画布尺寸
+ */
+export function worldRectToScreenRect(rect: Rect, viewport: Viewport, canvas: CanvasSize): Rect {
+  const topLeft = worldToScreen({ x: rect.x, y: rect.y }, viewport, canvas);
+  return {
+    x: topLeft.x,
+    y: topLeft.y,
+    width: rect.width * viewport.zoom,
+    height: rect.height * viewport.zoom,
+  };
 }
 

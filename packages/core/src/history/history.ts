@@ -34,10 +34,61 @@ export const createEmptyHistoryState = (): HistoryState => ({
 export const pushToHistory = (
   history: HistoryState,
   entry: HistoryEntry,
-): HistoryState => ({
-  undoStack: [...history.undoStack, entry],
-  redoStack: [],
-});
+): HistoryState => {
+  const last = history.undoStack[history.undoStack.length - 1];
+  if (last && canMergeHistoryEntries(last, entry)) {
+    const merged = mergeHistoryEntries(last, entry);
+    const undoStack = [...history.undoStack.slice(0, -1), merged];
+    return { undoStack, redoStack: [] };
+  }
+  return {
+    undoStack: [...history.undoStack, entry],
+    redoStack: [],
+  };
+};
+
+/**
+ * 判断两条历史记录是否可以基于 groupId 合并。
+ */
+const canMergeHistoryEntries = (a: HistoryEntry, b: HistoryEntry): boolean => {
+  const groupA = a.transaction.meta.groupId;
+  const groupB = b.transaction.meta.groupId;
+  return Boolean(groupA && groupB && groupA === groupB);
+};
+
+/**
+ * 合并两条历史记录，以「先执行 a、后执行 b」的顺序计算新的 Transaction。
+ */
+const mergeHistoryEntries = (a: HistoryEntry, b: HistoryEntry): HistoryEntry => {
+  const mergedTransaction: Transaction = {
+    steps: [...a.transaction.steps, ...b.transaction.steps],
+    meta: {
+      ...a.transaction.meta,
+      ...b.transaction.meta,
+      groupId: b.transaction.meta.groupId ?? a.transaction.meta.groupId,
+      label: b.transaction.meta.label ?? a.transaction.meta.label,
+      timestamp: b.transaction.meta.timestamp ?? a.transaction.meta.timestamp,
+    },
+  };
+
+  const mergedInverse: Transaction = {
+    steps: [...b.inverse.steps, ...a.inverse.steps],
+    meta: {
+      ...a.inverse.meta,
+      ...b.inverse.meta,
+      groupId: mergedTransaction.meta.groupId,
+      label: mergedTransaction.meta.label,
+      timestamp: mergedTransaction.meta.timestamp,
+      source: mergedTransaction.meta.source,
+      addToHistory: mergedTransaction.meta.addToHistory,
+    },
+  };
+
+  return {
+    transaction: mergedTransaction,
+    inverse: mergedInverse,
+  };
+};
 
 /**
  * 弹出最新的撤销记录。

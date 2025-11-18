@@ -58,3 +58,30 @@ export function rectIntersects(a: Rect, b: Rect): boolean {
   );
 }
 
+/**
+ * 将多个矩形合并成一个最小外包矩形。
+ * @param rects 要合并的矩形集合（至少一个）
+ */
+export function mergeRects(rects: Rect[]): Rect {
+  if (rects.length === 0) {
+    throw new Error('mergeRects requires at least one rect');
+  }
+  let minX = rects[0]!.x;
+  let minY = rects[0]!.y;
+  let maxX = rects[0]!.x + rects[0]!.width;
+  let maxY = rects[0]!.y + rects[0]!.height;
+  for (let i = 1; i < rects.length; i++) {
+    const rect = rects[i]!;
+    minX = Math.min(minX, rect.x);
+    minY = Math.min(minY, rect.y);
+    maxX = Math.max(maxX, rect.x + rect.width);
+    maxY = Math.max(maxY, rect.y + rect.height);
+  }
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+

@@ -226,6 +226,19 @@ MVP 版本采用“全量重绘”：
 `hitTestConnectorAt`：
 - MVP 暂未实现，将来可基于折线的“点到线段距离”逻辑实现。
 
+### 6. 拖拽预览与脏矩形局部重绘
+
+- **拖拽预览状态**  
+  - `beginDragPreview(blockIds)`：记录当前被拖拽的节点集合  
+  - `updateDragPreview({ dx, dy })`：仅更新 renderer 内部的 world-space delta，并通过 `dragPreview` 在绘制时对对应 block 的世界坐标偏移  
+  - `endDragPreview()`：清除预览数据，恢复正常渲染
+  - 预览阶段完全不触碰 `EditorState`，鼠标松开后由 core 的 `moveBlocks` 一次性提交真正的 Transaction
+- **脏矩形渲染**  
+  - renderer 维护 `fullDirty` + `dirtyRects`。拖拽时，仅将“旧位置矩形 + 新位置矩形”标记为脏区  
+  - `render()` 在有脏区时会 clip 到 union 区域，只清空并重绘受影响的部分（连线通过 clip 仅重绘穿过脏区的线段）  
+  - overlay 层仍然全量重绘，成本很低  
+  - 这样在 1000+ 节点的拖拽场景下，Canvas 不再每帧全量 clearRect，可以稳定 60fps
+
 ---
 
 ## 四、与 core / app 的协作方式

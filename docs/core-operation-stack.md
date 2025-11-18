@@ -102,3 +102,32 @@ return { state: currentState, inverse: { steps: inverses, meta: ... } }
 > **Command** 负责“业务语义 → 事务调用 → 状态更新”。  
 > 这个分层正是 MH 在 ProseMirror / CodeMirror 里取得成功的核心思想，我们直接复用了，以便后续扩展协同、回放、脚本化等高级能力。 
 
+---
+
+## 三条场景链路如何映射到操作栈
+
+### 1. “添加 FlightBlock + 映射到 Timeline + 撤销”
+
+- **Command**：`addFlightWithTimeline`（`core/src/commands/blockCommands.ts`）  
+  - 通过 `createFlightBlock` 工厂拿到合法 `FlightBlock`  
+  - 自动生成 `TimelineItem`，把两条 `Step`（`AddBlockStep` + `AddTimelineItemStep`）组装为一个 Transaction  
+  - `meta.addToHistory = true`，因此一次操作 = 一条 History entry
+- **History**：`undo / redo` 直接复放 Transaction，保证 Block 与 Timeline 同时回滚
+
+### 2. “画布点击选中 TripBlock 并高亮”
+
+- **Command**：`setSelection`（`viewCommands.ts`）默认 `addToHistory = false`
+- **Step**：`SetSelectionStep` 仅修改 `state.selection`，不触碰 `doc`
+- **Renderer**：监听到新的 selection 后在 overlay 层绘制虚线框
+
+### 3. “连续拖拽 → Step 合并 → 脏矩形”
+
+- **Command**：`moveBlocks`
+  - 将多个 `UpdateBlockLayoutStep` 打包成一个 Transaction
+  - 通过 `groupId` 标记为同一拖拽会话
+- **History**：`pushToHistory` 检测同 `groupId` 的相邻 entry 并自动合并，等效于 ProseMirror 的 transaction grouping，保证一次拖拽只占一个撤销单元
+- **React UI**：拖拽结束后 `setState(prev => moveBlocks(prev, patches, { groupId }))`
+- **Renderer**：拖拽过程中只更新本地 `dragPreview.delta`，不写入 core；mouse up 时才提交 Transaction
+
+这样一来，文档中描述的三条链路都能直接落在 Step → Transaction → Command 模型上，既能讲“数据正确性”（可逆 / 不变量），也能讲“用户体验”（一次拖拽一次撤销）。 
+

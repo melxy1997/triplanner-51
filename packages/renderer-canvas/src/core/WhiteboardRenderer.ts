@@ -7,10 +7,13 @@ import {
 } from '@triplanner/core';
 import { buildRenderScene } from './RenderScene.js';
 import { RenderScene } from '../types.js';
-import { worldToScreen, screenToWorld, CanvasSize } from '../geometry/transform.js';
+import { worldToScreen, screenToWorld, CanvasSize, worldRectToScreenRect } from '../geometry/transform.js';
 import { GridIndex, SpatialIndex } from '../spatial/GridIndex.js';
 import { hitTestBlock } from '../geometry/hitTest.js';
-import { RenderBlock } from '../types.js';
+import { RenderBlock, RenderConnector } from '../types.js';
+import { Rect, getBlockBounds, rectIntersects, mergeRects } from '../geometry/bounds.js';
+
+const ZERO_DELTA: Readonly<{ dx: number; dy: number }> = Object.freeze({ dx: 0, dy: 0 });
 
 /**
  * 渲染器初始化选项。
@@ -50,8 +53,22 @@ export class WhiteboardRenderer {
 
   /** 是否需要重绘 */
   private dirty = true;
+  /** 是否整帧重绘 */
+  private fullDirty = true;
+  /** 局部脏矩形（世界坐标） */
+  private dirtyRects: Rect[] = [];
   /** 空间索引（用于命中检测） */
   private spatialIndex: SpatialIndex;
+  /** 拖拽预览状态 */
+  private dragPreview: {
+    active: boolean;
+    blockIds: Set<BlockId>;
+    delta: { dx: number; dy: number };
+  } = {
+    active: false,
+    blockIds: new Set(),
+    delta: { dx: 0, dy: 0 },
+  };
 
   constructor(private readonly options: WhiteboardRendererOptions) {
     const mainCtx = options.mainCanvas.getContext('2d');
@@ -94,6 +111,9 @@ export class WhiteboardRenderer {
     this.blockMap = blockMap;
     this.viewport = state.viewport;
     this.selection = state.selection;
+    this.dragPreview.active = false;
+    this.dragPreview.blockIds.clear();
+    this.dragPreview.delta = { dx: 0, dy: 0 };
 
     // 重建空间索引
     this.spatialIndex.clear();
@@ -109,7 +129,7 @@ export class WhiteboardRenderer {
       });
     }
 
-    this.dirty = true;
+    this.markAllDirty();
   }
 
   /**
@@ -118,32 +138,70 @@ export class WhiteboardRenderer {
   render(): void {
     if (!this.dirty) return;
 
-    // 清空画布
-    this.mainCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
-    if (this.backgroundCtx) {
-      this.backgroundCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
+    if (this.fullDirty || this.dirtyRects.length === 0) {
+      this.renderFullFrame();
+    } else {
+      this.renderDirtyRegion();
     }
-    if (this.overlayCtx) {
-      this.overlayCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
-    }
-
-    // 绘制背景
-    if (this.backgroundCtx) {
-      this.renderBackground(this.backgroundCtx);
-    }
-
-    // 绘制连线
-    this.renderConnectors(this.mainCtx);
-
-    // 绘制节点
-    this.renderBlocks(this.mainCtx);
 
     // 绘制选中状态
     if (this.overlayCtx) {
+      this.overlayCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
       this.renderSelection(this.overlayCtx);
     }
 
     this.dirty = false;
+    this.fullDirty = false;
+    this.dirtyRects = [];
+  }
+
+  /**
+   * 执行一次全量重绘。
+   */
+  private renderFullFrame(): void {
+    this.mainCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
+    if (this.backgroundCtx) {
+      this.backgroundCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
+      this.renderBackground(this.backgroundCtx);
+    }
+    this.renderConnectors(this.mainCtx);
+    this.renderBlocks(this.mainCtx);
+  }
+
+  /**
+   * 仅对脏矩形覆盖的区域进行局部重绘。
+   */
+  private renderDirtyRegion(): void {
+    const union = mergeRects(this.dirtyRects);
+    const padding = 4 / Math.max(this.viewport.zoom, 0.0001);
+    const padded = this.expandRect(union, padding);
+    const screenRect = worldRectToScreenRect(padded, this.viewport, this.canvasSize);
+    const expandedScreenRect = {
+      x: screenRect.x - 2,
+      y: screenRect.y - 2,
+      width: screenRect.width + 4,
+      height: screenRect.height + 4,
+    };
+
+    this.mainCtx.clearRect(
+      expandedScreenRect.x,
+      expandedScreenRect.y,
+      expandedScreenRect.width,
+      expandedScreenRect.height,
+    );
+
+    this.mainCtx.save();
+    this.mainCtx.beginPath();
+    this.mainCtx.rect(
+      expandedScreenRect.x,
+      expandedScreenRect.y,
+      expandedScreenRect.width,
+      expandedScreenRect.height,
+    );
+    this.mainCtx.clip();
+    this.renderConnectors(this.mainCtx);
+    this.renderBlocks(this.mainCtx, (block) => this.blockIntersectsRect(block, padded));
+    this.mainCtx.restore();
   }
 
   /**
@@ -174,7 +232,7 @@ export class WhiteboardRenderer {
       setCanvasSize(this.options.overlayCanvas);
     }
 
-    this.dirty = true;
+    this.markAllDirty();
   }
 
   /**
@@ -216,6 +274,50 @@ export class WhiteboardRenderer {
   }
 
   /**
+   * 将屏幕坐标转换为当前世界坐标（提供给交互层使用）。
+   */
+  screenToWorld(point: { x: number; y: number }): { x: number; y: number } {
+    return screenToWorld(point, this.viewport, this.canvasSize);
+  }
+
+  /**
+   * 启动拖拽预览模式。
+   */
+  beginDragPreview(blockIds: BlockId[]): void {
+    if (blockIds.length === 0) {
+      return;
+    }
+    this.dragPreview.active = true;
+    this.dragPreview.blockIds = new Set(blockIds);
+    this.dragPreview.delta = { dx: 0, dy: 0 };
+  }
+
+  /**
+   * 更新拖拽预览位移（世界坐标系下的 delta）。
+   */
+  updateDragPreview(delta: { dx: number; dy: number }): void {
+    if (!this.dragPreview.active) {
+      return;
+    }
+    const previousDelta = this.dragPreview.delta;
+    this.dragPreview.delta = { dx: delta.dx, dy: delta.dy };
+    this.markDragDirty(previousDelta);
+  }
+
+  /**
+   * 结束拖拽预览并恢复正常渲染。
+   */
+  endDragPreview(): void {
+    if (!this.dragPreview.active) {
+      return;
+    }
+    this.dragPreview.active = false;
+    this.dragPreview.blockIds.clear();
+    this.dragPreview.delta = { dx: 0, dy: 0 };
+    this.markAllDirty();
+  }
+
+  /**
    * 清理资源。
    */
   destroy(): void {
@@ -224,6 +326,87 @@ export class WhiteboardRenderer {
   }
 
   // ========== 私有渲染方法 ==========
+
+  private getBlockWorldRect(block: RenderBlock): Rect {
+    const base = getBlockBounds(block);
+    const delta = this.getPreviewDeltaForBlock(block.id);
+    if (delta === ZERO_DELTA) {
+      return base;
+    }
+    return {
+      x: base.x + delta.dx,
+      y: base.y + delta.dy,
+      width: base.width,
+      height: base.height,
+    };
+  }
+
+  private getPreviewDeltaForBlock(blockId: BlockId): Readonly<{ dx: number; dy: number }> {
+    if (!this.dragPreview.active) {
+      return ZERO_DELTA;
+    }
+    return this.dragPreview.blockIds.has(blockId) ? this.dragPreview.delta : ZERO_DELTA;
+  }
+
+  private blockIntersectsRect(block: RenderBlock, rect: Rect): boolean {
+    if (rectIntersects(getBlockBounds(block), rect)) {
+      return true;
+    }
+    if (!this.dragPreview.active || !this.dragPreview.blockIds.has(block.id)) {
+      return false;
+    }
+    return rectIntersects(this.getBlockWorldRect(block), rect);
+  }
+
+  private expandRect(rect: Rect, padding: number): Rect {
+    return {
+      x: rect.x - padding,
+      y: rect.y - padding,
+      width: rect.width + padding * 2,
+      height: rect.height + padding * 2,
+    };
+  }
+
+  private markAllDirty(): void {
+    this.dirty = true;
+    this.fullDirty = true;
+    this.dirtyRects = [];
+  }
+
+  private markDirtyRect(rect: Rect): void {
+    if (this.fullDirty) {
+      this.fullDirty = false;
+      this.dirtyRects = [rect];
+    } else {
+      this.dirtyRects.push(rect);
+    }
+    this.dirty = true;
+  }
+
+  private markDragDirty(previousDelta?: { dx: number; dy: number }): void {
+    if (!this.dragPreview.active || this.dragPreview.blockIds.size === 0) {
+      return;
+    }
+    const deltas: Array<{ dx: number; dy: number }> = [];
+    if (previousDelta) {
+      deltas.push(previousDelta);
+    }
+    deltas.push(this.dragPreview.delta);
+
+    for (const blockId of this.dragPreview.blockIds) {
+      const block = this.blockMap.get(blockId);
+      if (!block) continue;
+      const base = getBlockBounds(block);
+      for (const delta of deltas) {
+        this.markDirtyRect({
+          x: base.x + delta.dx,
+          y: base.y + delta.dy,
+          width: base.width,
+          height: base.height,
+        });
+      }
+    }
+  }
 
   private renderBackground(ctx: CanvasRenderingContext2D): void {
     const { width, height } = this.canvasSize;
@@ -271,13 +454,19 @@ export class WhiteboardRenderer {
     }
   }
 
-  private renderBlocks(ctx: CanvasRenderingContext2D): void {
+  private renderBlocks(
+    ctx: CanvasRenderingContext2D,
+    filter?: (block: RenderBlock) => boolean,
+  ): void {
     for (const block of this.scene.blocks) {
-      const screenPos = worldToScreen({ x: block.x, y: block.y }, this.viewport, this.canvasSize);
-      const screenWidth = block.width * this.viewport.zoom;
-      const screenHeight = block.height * this.viewport.zoom;
+      if (filter && !filter(block)) {
+        continue;
+      }
+      const worldRect = this.getBlockWorldRect(block);
+      const screenPos = worldToScreen({ x: worldRect.x, y: worldRect.y }, this.viewport, this.canvasSize);
+      const screenWidth = worldRect.width * this.viewport.zoom;
+      const screenHeight = worldRect.height * this.viewport.zoom;
 
-      // 绘制背景
       ctx.fillStyle = block.style.backgroundColor;
       ctx.strokeStyle = block.style.borderColor;
       ctx.lineWidth = block.style.borderWidth;
@@ -292,7 +481,6 @@ export class WhiteboardRenderer {
       ctx.fill();
       ctx.stroke();
 
-      // 绘制文字
       if (block.label) {
         ctx.fillStyle = block.style.textColor;
         ctx.font = '14px sans-serif';
@@ -315,10 +503,10 @@ export class WhiteboardRenderer {
     for (const blockId of this.selection.selectedBlockIds) {
       const block = this.blockMap.get(blockId);
       if (!block) continue;
-
-      const screenPos = worldToScreen({ x: block.x, y: block.y }, this.viewport, this.canvasSize);
-      const screenWidth = block.width * this.viewport.zoom;
-      const screenHeight = block.height * this.viewport.zoom;
+      const worldRect = this.getBlockWorldRect(block);
+      const screenPos = worldToScreen({ x: worldRect.x, y: worldRect.y }, this.viewport, this.canvasSize);
+      const screenWidth = worldRect.width * this.viewport.zoom;
+      const screenHeight = worldRect.height * this.viewport.zoom;
 
       ctx.strokeRect(
         screenPos.x - 2,

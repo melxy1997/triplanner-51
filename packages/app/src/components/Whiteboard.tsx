@@ -5,15 +5,43 @@ import {
   setViewport,
   setSelection,
   addFlightWithTimeline,
-  updateBlockLayout,
+  moveBlocks,
   undo,
   redo,
   canUndo,
   canRedo,
+  BlockId,
+  BlockLayout,
 } from '@triplanner/core';
-import { WhiteboardRenderer, screenToWorld } from '@triplanner/renderer-canvas';
+import { WhiteboardRenderer } from '@triplanner/renderer-canvas';
 import { TimelinePanel } from './TimelinePanel.js';
-import { BlockId } from '@triplanner/core';
+
+/**
+ * 拖拽会话信息，记录起点与初始布局，用于 mouseup 时提交一次 Transaction。
+ */
+interface DragSession {
+  /** 会话唯一 ID，用于 History groupId */
+  id: string;
+  /** 当前拖拽涉及的全部节点 */
+  blockIds: BlockId[];
+  /** 拖拽起点（世界坐标） */
+  startWorld: { x: number; y: number };
+  /** 每个节点的初始布局克隆 */
+  initialLayouts: Map<BlockId, BlockLayout>;
+  /** 最近一次 delta（世界坐标） */
+  latestDelta: { dx: number; dy: number };
+}
+
+/** 生成拖拽会话 ID。 */
+const createDragSessionId = (): string =>
+  `drag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** 深拷贝布局，避免引用旧状态。 */
+const cloneLayout = (layout: BlockLayout): BlockLayout => ({
+  ...layout,
+  position: { ...layout.position },
+  size: { ...layout.size },
+});
 
 /**
  * 白板组件 Props。
@@ -48,12 +76,8 @@ export function Whiteboard({
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WhiteboardRenderer | null>(null);
-  const dragStateRef = useRef<{
-    blockId: BlockId;
-    startWorld: { x: number; y: number };
-    initialPosition: { x: number; y: number };
-  } | null>(null);
-  const dragLastPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const dragSessionRef = useRef<DragSession | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [state, setState] = useState<EditorState>(
     initialState ?? createEmptyEditorState(),
   );
@@ -89,15 +113,22 @@ export function Whiteboard({
     }
   }, [state, onStateChange]);
 
-  const canvasSize = { width, height };
-
   const handleSelectionChange = (blockIds: BlockId[]) => {
-    setState((prev) =>
-      setSelection(prev, {
-        selectedBlockIds: blockIds,
-        selectedConnectorIds: [],
-      }),
-    );
+    setState((prev) => {
+      const current = prev.selection.selectedBlockIds;
+      const sameLength = current.length === blockIds.length;
+      const same =
+        sameLength && current.every((id, index) => id === blockIds[index]);
+      if (same) {
+        return prev;
+      }
+      return setSelection(
+        prev,
+        blockIds.length > 0
+          ? { selectedBlockIds: blockIds, selectedConnectorIds: [] }
+          : null,
+      );
+    });
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -105,67 +136,101 @@ export function Whiteboard({
     const rect = mainCanvasRef.current.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-    const blockId = rendererRef.current.hitTestBlockAt(screenX, screenY);
+    const renderer = rendererRef.current;
+    const blockId = renderer.hitTestBlockAt(screenX, screenY);
 
-    if (blockId) {
-      handleSelectionChange([blockId]);
-      const block = state.doc.blocks.get(blockId);
-      if (!block) return;
-      const worldPoint = screenToWorld(
-        { x: screenX, y: screenY },
-        state.viewport,
-        canvasSize,
-      );
-      dragStateRef.current = {
-        blockId,
-        startWorld: worldPoint,
-        initialPosition: { ...block.layout.position },
-      };
-      dragLastPositionRef.current = block.layout.position;
-    } else {
+    if (!blockId) {
       handleSelectionChange([]);
+      dragSessionRef.current = null;
+      setIsDragging(false);
+      return;
     }
+
+    const currentSelection = state.selection.selectedBlockIds;
+    const isSelected = currentSelection.includes(blockId);
+    let nextSelection: BlockId[];
+    if (e.shiftKey) {
+      nextSelection = isSelected
+        ? currentSelection.filter((id) => id !== blockId)
+        : [...currentSelection, blockId];
+    } else {
+      nextSelection = isSelected ? [...currentSelection] : [blockId];
+    }
+    if (nextSelection.length === 0) {
+      nextSelection = [blockId];
+    }
+    handleSelectionChange(nextSelection);
+
+    const initialLayouts = new Map<BlockId, BlockLayout>();
+    nextSelection.forEach((id) => {
+      const block = state.doc.blocks.get(id);
+      if (block) {
+        initialLayouts.set(id, cloneLayout(block.layout));
+      }
+    });
+    if (initialLayouts.size === 0) {
+      return;
+    }
+
+    const worldPoint = renderer.screenToWorld({ x: screenX, y: screenY });
+    dragSessionRef.current = {
+      id: createDragSessionId(),
+      blockIds: nextSelection,
+      startWorld: worldPoint,
+      initialLayouts,
+      latestDelta: { dx: 0, dy: 0 },
+    };
+    renderer.beginDragPreview(nextSelection);
+    setIsDragging(true);
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!dragStateRef.current || !mainCanvasRef.current) return;
+    if (!dragSessionRef.current || !rendererRef.current || !mainCanvasRef.current) {
+      return;
+    }
     const rect = mainCanvasRef.current.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-    const worldPoint = screenToWorld(
-      { x: screenX, y: screenY },
-      state.viewport,
-      canvasSize,
-    );
-
-    const { blockId, startWorld, initialPosition } = dragStateRef.current;
-    const deltaX = worldPoint.x - startWorld.x;
-    const deltaY = worldPoint.y - startWorld.y;
-    const newPos = {
-      x: initialPosition.x + deltaX,
-      y: initialPosition.y + deltaY,
-    };
-    dragLastPositionRef.current = newPos;
-    setState((prev) =>
-      updateBlockLayout(
-        prev,
-        blockId,
-        { position: newPos },
-        { addToHistory: false, label: 'drag-preview' },
-      ),
-    );
+    const renderer = rendererRef.current;
+    const worldPoint = renderer.screenToWorld({ x: screenX, y: screenY });
+    const session = dragSessionRef.current;
+    const dx = worldPoint.x - session.startWorld.x;
+    const dy = worldPoint.y - session.startWorld.y;
+    session.latestDelta = { dx, dy };
+    renderer.updateDragPreview({ dx, dy });
+    renderer.render();
   };
 
-  const endDrag = () => {
-    if (dragStateRef.current && dragLastPositionRef.current) {
-      const { blockId } = dragStateRef.current;
-      const finalPos = dragLastPositionRef.current;
-      setState((prev) =>
-        updateBlockLayout(prev, blockId, { position: finalPos }, { groupId: 'drag' }),
-      );
+  const finalizeDrag = () => {
+    if (!dragSessionRef.current || !rendererRef.current) {
+      return;
     }
-    dragStateRef.current = null;
-    dragLastPositionRef.current = null;
+    const session = dragSessionRef.current;
+    dragSessionRef.current = null;
+    rendererRef.current.endDragPreview();
+    setIsDragging(false);
+
+    const { dx, dy } = session.latestDelta;
+    const epsilon = 1e-2;
+    if (Math.abs(dx) < epsilon && Math.abs(dy) < epsilon) {
+      return;
+    }
+
+    const patches = Array.from(session.initialLayouts.entries()).map(([blockId, layout]) => ({
+      blockId,
+      patch: {
+        position: {
+          x: layout.position.x + dx,
+          y: layout.position.y + dy,
+        },
+      },
+    }));
+
+    if (patches.length === 0) {
+      return;
+    }
+
+    setState((prev) => moveBlocks(prev, patches, { label: 'drag-move-blocks', groupId: session.id }));
   };
 
   const handleAddFlight = () => {
@@ -226,14 +291,14 @@ export function Whiteboard({
           ref={mainCanvasRef}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
-          onMouseUp={endDrag}
-          onMouseLeave={endDrag}
+          onMouseUp={finalizeDrag}
+          onMouseLeave={finalizeDrag}
           style={{
             position: 'absolute',
             top: 0,
             left: 0,
             zIndex: 1,
-            cursor: dragStateRef.current ? 'grabbing' : 'pointer',
+            cursor: isDragging ? 'grabbing' : 'pointer',
           }}
           width={width}
           height={height}

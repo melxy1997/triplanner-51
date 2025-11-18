@@ -8,6 +8,7 @@ import { TimelineItem } from '../schema/timeline.js';
 import { createAddTimelineItemStep } from '../steps/timelineSteps.js';
 import { generateId } from '../utils/id.js';
 import { TimeRange } from '../schema/types.js';
+import { Step } from '../steps/types.js';
 
 const pushHistoryIfNeeded = (
   state: EditorState,
@@ -29,7 +30,7 @@ const pushHistoryIfNeeded = (
 /**
  * 添加历史记录的元信息参数。
  */
-interface CommandMetaOptions {
+export interface CommandMetaOptions {
   addToHistory?: boolean;
   source?: TransactionSource;
   label?: string;
@@ -78,6 +79,33 @@ export function updateBlockLayout(
       addToHistory,
       source: options.source ?? 'local',
       label: options.label ?? 'update-block-layout',
+      timestamp: Date.now(),
+      groupId: options.groupId,
+    },
+  };
+  const res = applyTransaction(state, tr);
+  return pushHistoryIfNeeded(state, tr, res);
+}
+
+/**
+ * 多节点移动命令：将多个 block 的布局补丁合并为一次 Transaction。
+ */
+export function moveBlocks(
+  state: EditorState,
+  patches: { blockId: BlockId; patch: Partial<BlockLayout> }[],
+  options: CommandMetaOptions = {},
+): EditorState {
+  if (patches.length === 0) {
+    return state;
+  }
+  const steps: Step[] = patches.map(({ blockId, patch }) => createUpdateBlockLayoutStep(blockId, patch));
+  const addToHistory = options.addToHistory ?? true;
+  const tr: Transaction = {
+    steps,
+    meta: {
+      addToHistory,
+      source: options.source ?? 'local',
+      label: options.label ?? 'move-blocks',
       timestamp: Date.now(),
       groupId: options.groupId,
     },
