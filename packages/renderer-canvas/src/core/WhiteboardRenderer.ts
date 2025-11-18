@@ -12,8 +12,10 @@ import { GridIndex, SpatialIndex } from '../spatial/GridIndex.js';
 import { hitTestBlock } from '../geometry/hitTest.js';
 import { RenderBlock, RenderConnector } from '../types.js';
 import { Rect, getBlockBounds, rectIntersects, mergeRects } from '../geometry/bounds.js';
+import { StatsTracker, UnifiedRenderStats } from './RenderStats.js';
 
 const ZERO_DELTA: Readonly<{ dx: number; dy: number }> = Object.freeze({ dx: 0, dy: 0 });
+const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /**
  * 渲染器初始化选项。
@@ -25,6 +27,8 @@ export interface WhiteboardRendererOptions {
   backgroundCanvas?: HTMLCanvasElement;
   /** 覆盖层画布（绘制选中框等，可选） */
   overlayCanvas?: HTMLCanvasElement;
+  /** 指标采集器（可选） */
+  statsTracker?: StatsTracker;
 }
 
 /**
@@ -69,6 +73,8 @@ export class WhiteboardRenderer {
     blockIds: new Set(),
     delta: { dx: 0, dy: 0 },
   };
+  /** 指标采集器 */
+  private statsTracker?: StatsTracker;
 
   constructor(private readonly options: WhiteboardRendererOptions) {
     const mainCtx = options.mainCanvas.getContext('2d');
@@ -92,6 +98,7 @@ export class WhiteboardRenderer {
     }
 
     this.spatialIndex = new GridIndex(100);
+    this.statsTracker = options.statsTracker;
 
     // 初始化画布尺寸
     this.resize(
@@ -138,10 +145,13 @@ export class WhiteboardRenderer {
   render(): void {
     if (!this.dirty) return;
 
+    const frameStart = now();
+    let dirtyAreaRatio = 0;
+
     if (this.fullDirty || this.dirtyRects.length === 0) {
-      this.renderFullFrame();
+      dirtyAreaRatio = this.renderFullFrame();
     } else {
-      this.renderDirtyRegion();
+      dirtyAreaRatio = this.renderDirtyRegion();
     }
 
     // 绘制选中状态
@@ -153,12 +163,27 @@ export class WhiteboardRenderer {
     this.dirty = false;
     this.fullDirty = false;
     this.dirtyRects = [];
+
+    const frameTime = now() - frameStart;
+    if (this.statsTracker) {
+      const blocksRendered = this.scene.blocks.length;
+      const connectorsRendered = this.scene.connectors.length;
+      this.statsTracker.record({
+        frameTimeMs: frameTime,
+        blocksRendered,
+        connectorsRendered,
+        dirtyAreaRatio,
+        drawCalls: blocksRendered + connectorsRendered,
+        vertices: blocksRendered * 4 + connectorsRendered * 2,
+        texturesBound: 0,
+      });
+    }
   }
 
   /**
    * 执行一次全量重绘。
    */
-  private renderFullFrame(): void {
+  private renderFullFrame(): number {
     this.mainCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
     if (this.backgroundCtx) {
       this.backgroundCtx.clearRect(0, 0, this.canvasSize.width, this.canvasSize.height);
@@ -166,12 +191,13 @@ export class WhiteboardRenderer {
     }
     this.renderConnectors(this.mainCtx);
     this.renderBlocks(this.mainCtx);
+    return 1;
   }
 
   /**
    * 仅对脏矩形覆盖的区域进行局部重绘。
    */
-  private renderDirtyRegion(): void {
+  private renderDirtyRegion(): number {
     const union = mergeRects(this.dirtyRects);
     const padding = 4 / Math.max(this.viewport.zoom, 0.0001);
     const padded = this.expandRect(union, padding);
@@ -202,6 +228,14 @@ export class WhiteboardRenderer {
     this.renderConnectors(this.mainCtx);
     this.renderBlocks(this.mainCtx, (block) => this.blockIntersectsRect(block, padded));
     this.mainCtx.restore();
+
+    const canvasArea = this.canvasSize.width * this.canvasSize.height;
+    if (canvasArea <= 0) {
+      return 0;
+    }
+    const dirtyArea = expandedScreenRect.width * expandedScreenRect.height;
+    const ratio = dirtyArea / canvasArea;
+    return Math.max(0, Math.min(1, ratio));
   }
 
   /**
@@ -323,6 +357,27 @@ export class WhiteboardRenderer {
   destroy(): void {
     this.spatialIndex.clear();
     this.blockMap.clear();
+  }
+
+  /**
+   * 绑定或替换指标采集器。
+   */
+  setStatsTracker(tracker?: StatsTracker): void {
+    this.statsTracker = tracker;
+  }
+
+  /**
+   * 获取最近一次渲染指标。
+   */
+  getStatsSnapshot(): UnifiedRenderStats | null {
+    return this.statsTracker?.getSnapshot() ?? null;
+  }
+
+  /**
+   * 主动标记整帧为脏，强制下一帧重新绘制。
+   */
+  invalidateAll(): void {
+    this.markAllDirty();
   }
 
   // ========== 私有渲染方法 ==========

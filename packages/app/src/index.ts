@@ -13,3 +13,4 @@
  */
 
 export * from './components/Whiteboard.js';
+export * from './perf/PerfLabPage.js';

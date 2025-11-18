@@ -14,6 +14,7 @@
 
 export * from './types.js';
 export * from './core/WhiteboardRenderer.js';
+export * from './core/RenderStats.js';
 export * from './geometry/transform.js';
 export * from './geometry/bounds.js';
 export * from './geometry/hitTest.js';
