@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "echo \"App dev server TBD\"",
+    "dev": "vite",
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"No lint configured for @triplanner/app\"",
     "test": "echo \"No tests yet for @triplanner/app\""
@@ -15,6 +15,10 @@
     "@triplanner/renderer-canvas": "workspace:*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react-swc": "^3.7.0",
+    "vite": "^6.0.0"
   },
   "license": "MIT"
 }
