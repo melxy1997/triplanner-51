@@ -1,27 +1,23 @@
 {
-  "name": "triplanner-gpt51",
-  "version": "0.1.0",
+  "name": "triplanner-monorepo",
+  "version": "0.0.0",
   "private": true,
-  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\""
+  },
+  "devDependencies": {
+    "turbo": "latest",
+    "prettier": "latest",
+    "typescript": "latest"
+  },
+  "packageManager": "npm@10.2.4",
   "workspaces": [
     "packages/*"
   ],
-  "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "dev": "npm run dev --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
-  },
-  "devDependencies": {
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.6",
-    "@types/react-dom": "^19.2.3",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "engines": {
+    "node": ">=18"
+  }
 }

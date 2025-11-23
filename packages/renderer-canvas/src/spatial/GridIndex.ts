@@ -140,3 +140,4 @@ export class GridIndex implements SpatialIndex {
 
 
 
+

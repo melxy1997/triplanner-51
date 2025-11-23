@@ -1,361 +1,178 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  EditorState,
-  createEmptyEditorState,
-  setViewport,
-  setSelection,
-  addFlightWithTimeline,
-  moveBlocks,
-  undo,
-  redo,
-  canUndo,
-  canRedo,
-  BlockId,
-  BlockLayout,
-} from '@triplanner/core';
-import { WhiteboardRenderer } from '@triplanner/renderer-canvas';
-import { TimelinePanel } from './TimelinePanel.js';
+"use client";
 
-/**
- * 拖拽会话信息，记录起点与初始布局，用于 mouseup 时提交一次 Transaction。
- */
-interface DragSession {
-  /** 会话唯一 ID，用于 History groupId */
-  id: string;
-  /** 当前拖拽涉及的全部节点 */
-  blockIds: BlockId[];
-  /** 拖拽起点（世界坐标） */
-  startWorld: { x: number; y: number };
-  /** 每个节点的初始布局克隆 */
-  initialLayouts: Map<BlockId, BlockLayout>;
-  /** 最近一次 delta（世界坐标） */
-  latestDelta: { dx: number; dy: number };
-}
+import { useEffect, useRef, useState } from 'react';
+import { Scene, RectShape, TextShape, ToolType, InteractionManager } from '@triplanner/core';
+import { CanvasRenderer } from '@triplanner/renderer-canvas';
+import { Toolbar } from './Toolbar';
 
-/** 生成拖拽会话 ID。 */
-const createDragSessionId = (): string =>
-  `drag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+export default function Whiteboard() {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const rendererRef = useRef<CanvasRenderer | null>(null);
+    const sceneRef = useRef<Scene | null>(null);
+    const interactionRef = useRef<InteractionManager | null>(null);
+    const [activeTool, setActiveTool] = useState<ToolType>('select');
 
-/** 深拷贝布局，避免引用旧状态。 */
-const cloneLayout = (layout: BlockLayout): BlockLayout => ({
-  ...layout,
-  position: { ...layout.position },
-  size: { ...layout.size },
-});
+    // Text Editing State
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState('');
+    const [editPos, setEditPos] = useState({ x: 0, y: 0, w: 0, h: 0 });
 
-/**
- * 白板组件 Props。
- */
-export interface WhiteboardProps {
-  /** 初始编辑器状态（可选） */
-  initialState?: EditorState;
-  /** 画布宽度 */
-  width?: number;
-  /** 画布高度 */
-  height?: number;
-  /** 状态变化回调 */
-  onStateChange?: (state: EditorState) => void;
-}
+    useEffect(() => {
+        if (!canvasRef.current || !containerRef.current) return;
 
-/**
- * 白板组件：集成 core 和 renderer-canvas 的 React 组件。
- * 
- * 职责：
- * - 管理 EditorState
- * - 初始化 WhiteboardRenderer
- * - 处理用户交互（点击、拖拽等）
- * - 将用户操作转换为 core 命令
- */
-export function Whiteboard({
-  initialState,
-  width = 800,
-  height = 600,
-  onStateChange,
-}: WhiteboardProps) {
-  const mainCanvasRef = useRef<HTMLCanvasElement>(null);
-  const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef<WhiteboardRenderer | null>(null);
-  const dragSessionRef = useRef<DragSession | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [state, setState] = useState<EditorState>(
-    initialState ?? createEmptyEditorState(),
-  );
+        // Initialize Scene
+        const scene = new Scene();
+        sceneRef.current = scene;
 
-  // 初始化渲染器
-  useEffect(() => {
-    if (!mainCanvasRef.current) return;
+        // Initialize Renderer
+        const renderer = new CanvasRenderer(canvasRef.current, scene);
+        rendererRef.current = renderer;
 
-    const renderer = new WhiteboardRenderer({
-      mainCanvas: mainCanvasRef.current,
-      backgroundCanvas: backgroundCanvasRef.current ?? undefined,
-      overlayCanvas: overlayCanvasRef.current ?? undefined,
-    });
+        // Initialize Interaction Manager
+        const interaction = new InteractionManager(scene, renderer.getCamera());
+        interactionRef.current = interaction;
 
-    renderer.resize(width, height, window.devicePixelRatio || 1);
-    rendererRef.current = renderer;
-    renderer.updateState(state);
-    renderer.render();
+        return () => {
+            renderer.dispose();
+        };
+    }, []);
 
-    return () => {
-      renderer.destroy();
-      rendererRef.current = null;
+    // Update tool in interaction manager
+    useEffect(() => {
+        if (interactionRef.current) {
+            interactionRef.current.setTool(activeTool);
+        }
+    }, [activeTool]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container || !rendererRef.current) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const renderer = rendererRef.current;
+            if (!renderer) return;
+
+            const camera = renderer.getCamera();
+            if (e.ctrlKey || e.metaKey) {
+                // Zoom
+                const zoomFactor = 1 - e.deltaY * 0.001;
+                const newZoom = Math.max(0.1, Math.min(5, camera.zoom * zoomFactor));
+                // Zoom towards mouse pointer
+                const rect = container.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                camera.setZoom(newZoom, { x, y });
+            } else {
+                // Pan
+                camera.pan(e.deltaX, e.deltaY);
+            }
+        };
+
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        return () => {
+            container.removeEventListener('wheel', handleWheel);
+        };
+    }, []);
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (interactionRef.current && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            interactionRef.current.onPointerDown(e.clientX - rect.left, e.clientY - rect.top);
+            containerRef.current.setPointerCapture(e.pointerId);
+        }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  // 状态变化时更新渲染器
-  useEffect(() => {
-    if (rendererRef.current) {
-      rendererRef.current.updateState(state);
-      rendererRef.current.render();
-      onStateChange?.(state);
-    }
-  }, [state, onStateChange]);
-
-  const handleSelectionChange = (blockIds: BlockId[]) => {
-    setState((prev) => {
-      const current = prev.selection.selectedBlockIds;
-      const sameLength = current.length === blockIds.length;
-      const same =
-        sameLength && current.every((id, index) => id === blockIds[index]);
-      if (same) {
-        return prev;
-      }
-      return setSelection(
-        prev,
-        blockIds.length > 0
-          ? { selectedBlockIds: blockIds, selectedConnectorIds: [] }
-          : null,
-      );
-    });
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!rendererRef.current || !mainCanvasRef.current) return;
-    const rect = mainCanvasRef.current.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-    const renderer = rendererRef.current;
-    const blockId = renderer.hitTestBlockAt(screenX, screenY);
-
-    if (!blockId) {
-      handleSelectionChange([]);
-      dragSessionRef.current = null;
-      setIsDragging(false);
-      return;
-    }
-
-    const currentSelection = state.selection.selectedBlockIds;
-    const isSelected = currentSelection.includes(blockId);
-    let nextSelection: BlockId[];
-    if (e.shiftKey) {
-      nextSelection = isSelected
-        ? currentSelection.filter((id) => id !== blockId)
-        : [...currentSelection, blockId];
-    } else {
-      nextSelection = isSelected ? [...currentSelection] : [blockId];
-    }
-    if (nextSelection.length === 0) {
-      nextSelection = [blockId];
-    }
-    handleSelectionChange(nextSelection);
-
-    const initialLayouts = new Map<BlockId, BlockLayout>();
-    nextSelection.forEach((id) => {
-      const block = state.doc.blocks.get(id);
-      if (block) {
-        initialLayouts.set(id, cloneLayout(block.layout));
-      }
-    });
-    if (initialLayouts.size === 0) {
-      return;
-    }
-
-    const worldPoint = renderer.screenToWorld({ x: screenX, y: screenY });
-    dragSessionRef.current = {
-      id: createDragSessionId(),
-      blockIds: nextSelection,
-      startWorld: worldPoint,
-      initialLayouts,
-      latestDelta: { dx: 0, dy: 0 },
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (interactionRef.current && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            interactionRef.current.onPointerMove(e.clientX - rect.left, e.clientY - rect.top);
+        }
     };
-    renderer.beginDragPreview(nextSelection);
-    setIsDragging(true);
-  };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!dragSessionRef.current || !rendererRef.current || !mainCanvasRef.current) {
-      return;
-    }
-    const rect = mainCanvasRef.current.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-    const renderer = rendererRef.current;
-    const worldPoint = renderer.screenToWorld({ x: screenX, y: screenY });
-    const session = dragSessionRef.current;
-    const dx = worldPoint.x - session.startWorld.x;
-    const dy = worldPoint.y - session.startWorld.y;
-    session.latestDelta = { dx, dy };
-    renderer.updateDragPreview({ dx, dy });
-    renderer.render();
-  };
+    const handlePointerUp = (e: React.PointerEvent) => {
+        if (interactionRef.current && containerRef.current) {
+            interactionRef.current.onPointerUp();
+            containerRef.current.releasePointerCapture(e.pointerId);
+        }
+    };
 
-  const finalizeDrag = () => {
-    if (!dragSessionRef.current || !rendererRef.current) {
-      return;
-    }
-    const session = dragSessionRef.current;
-    dragSessionRef.current = null;
-    rendererRef.current.endDragPreview();
-    setIsDragging(false);
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        if (interactionRef.current && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            interactionRef.current.onDoubleClick(
+                e.clientX - rect.left,
+                e.clientY - rect.top,
+                (id) => {
+                    const shape = sceneRef.current?.getState().shapes[id];
+                    if (shape && shape.type === 'text' && rendererRef.current) {
+                        const t = shape as any;
+                        const camera = rendererRef.current.getCamera();
+                        const screenPos = camera.worldToScreen({ x: t.x, y: t.y });
 
-    const { dx, dy } = session.latestDelta;
-    const epsilon = 1e-2;
-    if (Math.abs(dx) < epsilon && Math.abs(dy) < epsilon) {
-      return;
-    }
+                        setEditingId(id);
+                        setEditValue(t.content);
+                        setEditPos({
+                            x: screenPos.x,
+                            y: screenPos.y,
+                            w: t.content.length * (t.fontSize || 24) * 0.6 + 20, // Approx width
+                            h: (t.fontSize || 24) + 10
+                        });
+                    }
+                }
+            );
+        }
+    };
 
-    const patches = Array.from(session.initialLayouts.entries()).map(([blockId, layout]) => ({
-      blockId,
-      patch: {
-        position: {
-          x: layout.position.x + dx,
-          y: layout.position.y + dy,
-        },
-      },
-    }));
+    const handleTextSubmit = () => {
+        if (editingId && sceneRef.current) {
+            sceneRef.current.updateShape(editingId, { content: editValue });
+            setEditingId(null);
+        }
+    };
 
-    if (patches.length === 0) {
-      return;
-    }
-
-    setState((prev) => moveBlocks(prev, patches, { label: 'drag-move-blocks', groupId: session.id }));
-  };
-
-  const handleAddFlight = () => {
-    const now = new Date();
-    const endTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-    setState((prev) =>
-      addFlightWithTimeline(prev, {
-        title: '示例航班',
-        fromAirport: 'PEK',
-        toAirport: 'SHA',
-        flightNumber: `CA${Math.floor(Math.random() * 9000 + 1000)}`,
-        time: {
-          start: now.toISOString(),
-          end: endTime.toISOString(),
-        },
-        position: { x: Math.random() * 400 + 50, y: Math.random() * 300 + 50 },
-      }),
-    );
-  };
-
-  const handleUndo = () => {
-    if (canUndo(state)) {
-      setState((prev) => undo(prev));
-    }
-  };
-
-  const handleRedo = () => {
-    if (canRedo(state)) {
-      setState((prev) => redo(prev));
-    }
-  };
-
-  const handleTimelineSelect = (item: { blockId: BlockId }) => {
-    handleSelectionChange([item.blockId]);
-    const block = state.doc.blocks.get(item.blockId);
-    if (block) {
-      setState((prev) =>
-        setViewport(prev, {
-          center: {
-            x: block.layout.position.x + block.layout.size.width / 2,
-            y: block.layout.position.y + block.layout.size.height / 2,
-          },
-        }),
-      );
-    }
-  };
-
-  return (
-    <div style={{ display: 'flex', gap: '16px', width: width + 320, height }}>
-      <div style={{ position: 'relative', width, height }}>
-        <canvas
-          ref={backgroundCanvasRef}
-          style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}
-          width={width}
-          height={height}
-        />
-        <canvas
-          ref={mainCanvasRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={finalizeDrag}
-          onMouseLeave={finalizeDrag}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            zIndex: 1,
-            cursor: isDragging ? 'grabbing' : 'pointer',
-          }}
-          width={width}
-          height={height}
-        />
-        <canvas
-          ref={overlayCanvasRef}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            zIndex: 2,
-            pointerEvents: 'none',
-          }}
-          width={width}
-          height={height}
-        />
-
+    return (
         <div
-          style={{
-            position: 'absolute',
-            top: 10,
-            left: 10,
-            zIndex: 10,
-            background: 'white',
-            padding: '10px',
-            borderRadius: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            display: 'flex',
-            gap: '8px',
-          }}
+            ref={containerRef}
+            className="w-full h-full relative bg-gray-50 overflow-hidden touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onDoubleClick={handleDoubleClick}
         >
-          <button onClick={handleAddFlight}>添加航班+时间线</button>
-          <button onClick={handleUndo} disabled={!canUndo(state)}>
-            撤销
-          </button>
-          <button onClick={handleRedo} disabled={!canRedo(state)}>
-            重做
-          </button>
+            <canvas
+                ref={canvasRef}
+                className={`block w-full h-full ${activeTool === 'hand' ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
+            />
+            <Toolbar activeTool={activeTool} onSelectTool={setActiveTool} />
+
+            {editingId && (
+                <input
+                    className="absolute bg-white border border-blue-500 px-1 outline-none shadow-md"
+                    style={{
+                        left: editPos.x,
+                        top: editPos.y,
+                        minWidth: editPos.w,
+                        height: editPos.h,
+                        fontSize: '24px', // Match default font size
+                        fontFamily: 'sans-serif',
+                        transform: 'translateY(0%)' // Text is drawn at baseline, input is top-left. 
+                        // Actually text is drawn at y+fontSize. 
+                        // worldToScreen(x,y) gives top-left of text box if we assume standard coords.
+                        // Our hit test assumes (x,y) is top-left. 
+                        // Renderer draws at (0, fontSize). 
+                        // So (x,y) is top-left.
+                    }}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={handleTextSubmit}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleTextSubmit();
+                    }}
+                    autoFocus
+                />
+            )}
         </div>
-      </div>
-
-      <div
-        style={{
-          flex: '0 0 280px',
-          borderLeft: '1px solid #eee',
-          height,
-          background: '#fafafa',
-        }}
-      >
-        <TimelinePanel
-          timeline={state.doc.timeline}
-          blocks={state.doc.blocks}
-          selectedBlockIds={state.selection.selectedBlockIds}
-          onSelectTimelineItem={handleTimelineSelect}
-        />
-      </div>
-    </div>
-  );
+    );
 }
-
