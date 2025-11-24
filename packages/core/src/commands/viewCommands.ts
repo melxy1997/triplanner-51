@@ -1,8 +1,8 @@
-import { EditorState } from '../state/editorState.js';
-import { Transaction, applyTransaction } from '../transaction/transaction.js';
-import { createSetViewportStep, createSetSelectionStep } from '../steps/viewSteps.js';
-import { Viewport } from '../schema/viewport.js';
-import { Selection } from '../schema/selection.js';
+import { EditorState } from '../state/editorState';
+import { Transaction, applyTransaction } from '../transaction/transaction';
+import { createSetViewportStep, createSetSelectionStep } from '../steps/viewSteps';
+import { Viewport } from '../schema/viewport';
+import { Selection } from '../schema/selection';
 
 /**
  * 更新视口（平移、缩放等），通常不进历史记录。

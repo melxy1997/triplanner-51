@@ -1,4 +1,4 @@
-import { Vec2 } from './types.js';
+import { Vec2 } from './types';
 
 /**
  * 画布视口信息，用于决定渲染范围。

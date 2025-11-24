@@ -56,28 +56,31 @@ export class CanvasRenderer {
         this.rafId = requestAnimationFrame(this.loop);
     };
 
-    render() {
+    render(scene?: Scene, camera?: Camera) {
+        const targetScene = scene || this.scene;
+        const targetCamera = camera || this.camera;
+
         this.ctx.clearRect(0, 0, this.width, this.height);
 
         this.ctx.save();
         // Apply Camera Transform
-        this.ctx.scale(this.camera.zoom, this.camera.zoom);
-        this.ctx.translate(-this.camera.x, -this.camera.y);
+        this.ctx.scale(targetCamera.zoom, targetCamera.zoom);
+        this.ctx.translate(-targetCamera.x, -targetCamera.y);
 
-        this.drawGrid();
+        this.drawGrid(targetCamera);
 
-        const { shapes } = this.scene.getState();
+        const { shapes } = targetScene.getState();
         Object.values(shapes).forEach(shape => {
             this.ctx.save();
-            this.drawShape(shape);
+            this.drawShape(shape, targetScene, targetCamera);
             this.ctx.restore();
         });
 
         this.ctx.restore();
     }
 
-    private drawGrid() {
-        const viewport = this.camera.getViewport(this.width, this.height);
+    private drawGrid(camera: Camera) {
+        const viewport = camera.getViewport(this.width, this.height);
         const gridSize = 50;
 
         const startX = Math.floor(viewport.x / gridSize) * gridSize;
@@ -86,7 +89,7 @@ export class CanvasRenderer {
         const endY = startY + viewport.h + gridSize;
 
         this.ctx.strokeStyle = '#e5e7eb';
-        this.ctx.lineWidth = 1 / this.camera.zoom;
+        this.ctx.lineWidth = 1 / camera.zoom;
         this.ctx.beginPath();
 
         for (let x = startX; x <= endX; x += gridSize) {
@@ -100,20 +103,20 @@ export class CanvasRenderer {
         this.ctx.stroke();
     }
 
-    private drawShape(shape: Shape) {
+    private drawShape(shape: Shape, scene: Scene, camera: Camera) {
         this.ctx.translate(shape.x, shape.y);
 
         if (shape.type === 'rect') {
-            this.drawRect(shape as RectShape);
+            this.drawRect(shape as RectShape, camera);
         } else if (shape.type === 'text') {
             this.drawText(shape as TextShape);
         }
 
         // Draw selection outline
-        const isSelected = this.scene.getState().selection.includes(shape.id);
+        const isSelected = scene.getState().selection.includes(shape.id);
         if (isSelected) {
             this.ctx.strokeStyle = '#00a0ff';
-            this.ctx.lineWidth = 2 / this.camera.zoom;
+            this.ctx.lineWidth = 2 / camera.zoom;
 
             if (shape.type === 'rect') {
                 const s = shape as RectShape;
@@ -127,7 +130,7 @@ export class CanvasRenderer {
                 // Draw Resize Handles (Corners)
                 this.ctx.fillStyle = '#ffffff';
                 this.ctx.strokeStyle = '#00a0ff';
-                const handleSize = 8 / this.camera.zoom;
+                const handleSize = 8 / camera.zoom;
                 const half = handleSize / 2;
 
                 // TL, TR, BL, BR
@@ -155,7 +158,7 @@ export class CanvasRenderer {
         }
     }
 
-    private drawRect(shape: RectShape) {
+    private drawRect(shape: RectShape, camera: Camera) {
         const x = shape.w < 0 ? shape.w : 0;
         const y = shape.h < 0 ? shape.h : 0;
         const w = Math.abs(shape.w);
@@ -165,7 +168,7 @@ export class CanvasRenderer {
         this.ctx.fillRect(x, y, w, h);
         if (shape.stroke) {
             this.ctx.strokeStyle = shape.stroke;
-            this.ctx.lineWidth = 2 / this.camera.zoom;
+            this.ctx.lineWidth = 2 / camera.zoom;
             this.ctx.strokeRect(0, 0, shape.w, shape.h);
         }
     }

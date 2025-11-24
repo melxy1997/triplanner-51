@@ -1,5 +1,5 @@
-import { EditorState } from '../state/editorState.js';
-import { Step } from '../steps/types.js';
+import { EditorState } from '../state/editorState';
+import { Step } from '../steps/types';
 
 /** 事务来源标识，方便区分本地/远端操作。 */
 export type TransactionSource = 'local' | 'remote' | 'system';

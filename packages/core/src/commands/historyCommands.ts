@@ -1,6 +1,6 @@
-import { EditorState } from '../state/editorState.js';
-import { applyTransaction } from '../transaction/transaction.js';
-import { popUndo, popRedo, pushRedo, pushToHistory } from '../history/history.js';
+import { EditorState } from '../state/editorState';
+import { applyTransaction } from '../transaction/transaction';
+import { popUndo, popRedo, pushRedo, pushToHistory } from '../history/history';
 
 /**
  * 撤销上一次操作。

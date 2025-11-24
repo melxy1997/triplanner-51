@@ -1,14 +1,14 @@
-import { EditorState } from '../state/editorState.js';
-import { Transaction, applyTransaction, TransactionSource } from '../transaction/transaction.js';
-import { createAddBlockStep, createUpdateBlockLayoutStep, createRemoveBlockStep } from '../steps/blockSteps.js';
-import { TripBlock, BlockLayout, BlockId } from '../schema/block.js';
-import { pushToHistory } from '../history/history.js';
-import { CreateFlightBlockInput, createFlightBlock } from '../state/factories.js';
-import { TimelineItem } from '../schema/timeline.js';
-import { createAddTimelineItemStep } from '../steps/timelineSteps.js';
-import { generateId } from '../utils/id.js';
-import { TimeRange } from '../schema/types.js';
-import { Step } from '../steps/types.js';
+import { EditorState } from '../state/editorState';
+import { Transaction, applyTransaction, TransactionSource } from '../transaction/transaction';
+import { createAddBlockStep, createUpdateBlockLayoutStep, createRemoveBlockStep } from '../steps/blockSteps';
+import { TripBlock, BlockLayout, BlockId } from '../schema/block';
+import { pushToHistory } from '../history/history';
+import { CreateFlightBlockInput, createFlightBlock } from '../state/factories';
+import { TimelineItem } from '../schema/timeline';
+import { createAddTimelineItemStep } from '../steps/timelineSteps';
+import { generateId } from '../utils/id';
+import { TimeRange } from '../schema/types';
+import { Step } from '../steps/types';
 
 const pushHistoryIfNeeded = (
   state: EditorState,

@@ -1,4 +1,4 @@
-import { TimeRange } from './types.js';
+import { TimeRange } from './types';
 
 /** Timeline 条目的唯一标识 */
 export type TimelineId = string;

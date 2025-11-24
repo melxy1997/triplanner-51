@@ -1,7 +1,7 @@
-import { EditorState } from '../state/editorState.js';
-import { Step, StepApplyResult } from './types.js';
-import { Viewport } from '../schema/viewport.js';
-import { Selection } from '../schema/selection.js';
+import { EditorState } from '../state/editorState';
+import { Step, StepApplyResult } from './types';
+import { Viewport } from '../schema/viewport';
+import { Selection } from '../schema/selection';
 
 /**
  * 设置视口的 Step。

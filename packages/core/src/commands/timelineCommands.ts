@@ -1,15 +1,15 @@
-import { EditorState } from '../state/editorState.js';
-import { TimelineItem } from '../schema/timeline.js';
+import { EditorState } from '../state/editorState';
+import { TimelineItem } from '../schema/timeline';
 import {
   createAddTimelineItemStep,
-  createUpdateTimelineItemStep,
   createRemoveTimelineItemStep,
-} from '../steps/timelineSteps.js';
-import { applyTransaction, Transaction, TransactionSource } from '../transaction/transaction.js';
-import { pushToHistory } from '../history/history.js';
-import { generateId } from '../utils/id.js';
-import { TimeRange } from '../schema/types.js';
-import { BlockId } from '../schema/block.js';
+  createUpdateTimelineItemStep,
+} from '../steps/timelineSteps';
+import { applyTransaction, Transaction, TransactionSource } from '../transaction/transaction';
+import { pushToHistory } from '../history/history';
+import { generateId } from '../utils/id';
+import { TimeRange } from '../schema/types';
+import { BlockId } from '../schema/block';
 
 /**
  * 创建 timeline 条目所需输入。

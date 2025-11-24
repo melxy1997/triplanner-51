@@ -1,9 +1,9 @@
-import { TripBlock, BlockId, BlockLayout } from '../schema/block.js';
-import { validateBlock } from '../schema/validators.js';
-import { cloneBlockWithLayout } from '../state/factories.js';
-import { cloneMap } from '../utils/map.js';
-import { EditorState } from '../state/editorState.js';
-import { Step, StepApplyResult } from './types.js';
+import { TripBlock, BlockId, BlockLayout } from '../schema/block';
+import { validateBlock } from '../schema/validators';
+import { cloneBlockWithLayout } from '../state/factories';
+import { cloneMap } from '../utils/map';
+import { EditorState } from '../state/editorState';
+import { Step, StepApplyResult } from './types';
 
 /**
  * 工具函数：在不修改原对象的情况下返回更新后的文档。

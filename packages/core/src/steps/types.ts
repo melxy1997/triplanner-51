@@ -1,4 +1,4 @@
-import { EditorState } from '../state/editorState.js';
+import { EditorState } from '../state/editorState';
 
 /**
  * Step 执行后返回的结果。

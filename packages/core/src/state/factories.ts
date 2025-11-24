@@ -4,10 +4,14 @@ import {
   NoteBlock,
   TripBlock,
   TripBlockKind,
-} from '../schema/block.js';
-import { TimeRange, Vec2 } from '../schema/types.js';
-import { validateBlock } from '../schema/validators.js';
-import { generateId } from '../utils/id.js';
+  HotelBlock,
+  AttractionBlock,
+  TransportBlock,
+  ImageBlock,
+} from '../schema/block';
+import { TimeRange, Vec2 } from '../schema/types';
+import { validateBlock } from '../schema/validators';
+import { generateId } from '../utils/id';
 
 /** 内部统一的时间戳生成函数 */
 const now = () => Date.now();
@@ -68,9 +72,9 @@ export const createFlightBlock = (input: CreateFlightBlockInput): FlightBlock =>
     updatedAt: now(),
     source: input.sourceExternalId
       ? {
-          provider: 'trip.com',
-          externalId: input.sourceExternalId,
-        }
+        provider: 'trip.com',
+        externalId: input.sourceExternalId,
+      }
       : undefined,
     title: input.title,
     fromAirport: input.fromAirport,

@@ -1,7 +1,7 @@
-import { TimelineItem, TimelineId } from '../schema/timeline.js';
-import { EditorState } from '../state/editorState.js';
-import { Step, StepApplyResult } from './types.js';
-import { cloneMap } from '../utils/map.js';
+import { TimelineItem, TimelineId } from '../schema/timeline';
+import { EditorState } from '../state/editorState';
+import { Step, StepApplyResult } from './types';
+import { cloneMap } from '../utils/map';
 
 /**
  * 更新文档 timeline 的工具函数。

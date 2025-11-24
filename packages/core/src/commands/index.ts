@@ -5,8 +5,10 @@
  * 命令函数内部封装了 Step/Transaction/History 的细节。
  */
 
-export * from './blockCommands.js';
-export * from './viewCommands.js';
-export * from './timelineCommands.js';
-export * from './historyCommands.js';
+export * from './blockCommands';
+export * from './viewCommands';
+export * from './timelineCommands';
+export * from './historyCommands';
+export * from './shapeCommands';
+
 
